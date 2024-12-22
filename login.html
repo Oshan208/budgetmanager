@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register and Login</title>
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+
+  <h1 id="formTitle">Register</h1>
+
+  <!-- Register/Login Form -->
+  <form id="authForm">
+    <input type="email" id="email" placeholder="Enter your email" required><br>
+    <input type="password" id="password" placeholder="Enter your password" required><br>
+    <button type="submit" id="authButton">Register</button>
+  </form>
+
+  <p id="toggleFormText">Already have an account? <a href="javascript:void(0)" id="toggleForm">Login here</a></p>
+
+  <script type="module">
+    // Import necessary Firebase functions
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-database.js";
+
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyCU_sbeWA4YAuezt2CssUytUwQcmb56KRs",
+      authDomain: "testapp-5186a.firebaseapp.com",
+      databaseURL: "https://testapp-5186a-default-rtdb.firebaseio.com",
+      projectId: "testapp-5186a",
+      storageBucket: "testapp-5186a.firebasestorage.app",
+      messagingSenderId: "231231346867",
+      appId: "1:231231346867:web:9245c5833bcbf5264f78c6"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const database = getDatabase(app);
+
+    let isRegistering = true;  // Flag to check if the user is in registration mode
+
+    // Handle form submission for both register and login
+    document.getElementById('authForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      if (isRegistering) {
+        // Register User
+        createUserWithEmailAndPassword(auth, email, password)
+          .then((userCredential) => {
+            const user = userCredential.user;
+
+            // Save user info to Realtime Database
+            const userRef = ref(database, 'users/' + user.uid);
+            set(userRef, {
+              email: email
+            });
+
+            // Send email verification
+            sendEmailVerification(user)
+              .then(() => {
+                alert("Registration successful. Please check your email to verify your account.");
+              })
+              .catch((error) => {
+                console.error("Error sending email verification:", error);
+              });
+          })
+          .catch((error) => {
+            console.error("Error during registration:", error);
+            alert("Error during registration: " + error.message);
+          });
+      } else {
+        // Login User
+        signInWithEmailAndPassword(auth, email, password)
+          .then((userCredential) => {
+            const user = userCredential.user;
+
+            // Check if email is verified
+            if (user.emailVerified) {
+              alert("Login successful!");
+              // Redirect to homepage.html
+              window.location.href = 'homepage.html';
+            } else {
+              alert("Please verify your email before logging in.");
+            }
+          })
+          .catch((error) => {
+            console.error("Error during login:", error);
+            alert("Error during login: " + error.message);
+          });
+      }
+    });
+
+    // Toggle between Register and Login forms
+    document.getElementById('toggleForm').addEventListener('click', function() {
+      isRegistering = !isRegistering;
+
+      if (isRegistering) {
+        document.getElementById('formTitle').textContent = 'Register';
+        document.getElementById('authButton').textContent = 'Register';
+        document.getElementById('toggleFormText').innerHTML = 'Already have an account? <a href="javascript:void(0)" id="toggleForm">Login here</a>';
+      } else {
+        document.getElementById('formTitle').textContent = 'Login';
+        document.getElementById('authButton').textContent = 'Login';
+        document.getElementById('toggleFormText').innerHTML = "Don't have an account? <a href='javascript:void(0)' id='toggleForm'>Register here</a>";
+      }
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Budget Management System</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+
+  <h1>Budget Management System</h1>
+
+  <!-- Logout Button -->
+  <button id="logoutBtn">Logout</button>
+
+  <div>
+    <h2>Main Balance</h2>
+    <p><strong>TRX:</strong> <span id="trxBalance">0</span></p>
+    <p><strong>LKR:</strong> <span id="lkrBalance">0</span></p>
+    <p><strong>USDT:</strong> <span id="usdtBalance">0</span></p>
+  </div>
+
+  <h3>Record New Budget Entry</h3>
+  <form id="budgetForm">
+    <input type="text" id="description" placeholder="Description" required><br>
+    <select id="currency" required>
+      <option value="TRX">TRX</option>
+      <option value="LKR">LKR</option>
+      <option value="USDT">USDT</option>
+    </select><br>
+    <input type="number" id="value" placeholder="Value" required><br>
+    <button type="submit">Add Entry</button>
+  </form>
+
+  <h3>Budget History</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Time</th>
+        <th>Description</th>
+        <th>Currency</th>
+        <th>Value</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="budgetHistory"></tbody>
+  </table>
+
+  <button id="downloadPdfBtn">Download Budget Records as PDF</button>
+
+  <script type="module">
+    // Firebase setup
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+    import { getDatabase, ref, set, get, remove } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-database.js";
+    import { getAuth, sendEmailVerification, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCU_sbeWA4YAuezt2CssUytUwQcmb56KRs",
+      authDomain: "testapp-5186a.firebaseapp.com",
+      databaseURL: "https://testapp-5186a-default-rtdb.firebaseio.com",
+      projectId: "testapp-5186a",
+      storageBucket: "testapp-5186a.firebasestorage.app",
+      messagingSenderId: "231231346867",
+      appId: "1:231231346867:web:9245c5833bcbf5264f78c6"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+    const auth = getAuth(app);
+
+    // Initialize main balance
+    let mainBalance = {
+      TRX: 0,
+      LKR: 0,
+      USDT: 0
+    };
+
+    // Function to update main balance
+    function updateMainBalance() {
+      document.getElementById('trxBalance').innerText = mainBalance.TRX;
+      document.getElementById('lkrBalance').innerText = mainBalance.LKR;
+      document.getElementById('usdtBalance').innerText = mainBalance.USDT;
+    }
+
+    // Get current balance from Firebase on load
+    function getBalancesFromDatabase() {
+      const balanceRef = ref(database, 'balances/');
+      get(balanceRef).then((snapshot) => {
+        if (snapshot.exists()) {
+          mainBalance = snapshot.val();
+        }
+        updateMainBalance();
+      });
+    }
+
+    // Function to add a budget entry
+    function addBudgetEntry(date, time, description, currency, value) {
+      const budgetRef = ref(database, 'budget/' + Date.now());
+      set(budgetRef, {
+        date: date,
+        time: time,
+        description: description,
+        currency: currency,
+        value: value
+      });
+
+      // Update the main balance
+      if (currency === "TRX") {
+        mainBalance.TRX += value;
+      } else if (currency === "LKR") {
+        mainBalance.LKR += value;
+      } else if (currency === "USDT") {
+        mainBalance.USDT += value;
+      }
+
+      // Update balances in Firebase
+      const balanceRef = ref(database, 'balances/');
+      set(balanceRef, mainBalance);
+
+      updateMainBalance();
+    }
+
+    // Function to send email verification for deleting the record
+    function sendDeleteVerificationEmail(entryId, row) {
+      const user = auth.currentUser;
+      if (user) {
+        sendEmailVerification(user)
+          .then(() => {
+            alert("A verification email has been sent to your email address. Please verify before deleting the record.");
+            // Store the entryId and row to proceed after email verification
+            sessionStorage.setItem('deleteRecordId', entryId);
+            sessionStorage.setItem('deleteRow', row.outerHTML); // Store the row HTML for deletion
+          })
+          .catch((error) => {
+            alert("Error sending verification email: " + error.message);
+          });
+      } else {
+        alert("Please log in first to delete a record.");
+      }
+    }
+
+    // Function to delete the budget entry after email verification
+    function deleteBudgetEntry(entryId, row) {
+      const entryRef = ref(database, 'budget/' + entryId);
+      get(entryRef).then((snapshot) => {
+        const entryData = snapshot.val();
+        const value = entryData.value;
+        const currency = entryData.currency;
+
+        remove(entryRef).then(() => {
+          row.remove();  // Remove the corresponding row from the table
+          alert("Record deleted successfully.");
+
+          // Update the main balance by subtracting the deleted value
+          if (currency === "TRX") {
+            mainBalance.TRX -= value;
+          } else if (currency === "LKR") {
+            mainBalance.LKR -= value;
+          } else if (currency === "USDT") {
+            mainBalance.USDT -= value;
+          }
+
+          // Update balances in Firebase
+          const balanceRef = ref(database, 'balances/');
+          set(balanceRef, mainBalance);
+          updateMainBalance();
+        }).catch((error) => {
+          alert("Error deleting record: " + error.message);
+        });
+      });
+    }
+
+    // Function to display budget history
+    function displayBudgetHistory() {
+      const historyRef = ref(database, 'budget/');
+      get(historyRef).then((snapshot) => {
+        const historyTable = document.getElementById('budgetHistory');
+        historyTable.innerHTML = '';
+
+        snapshot.forEach(childSnapshot => {
+          const data = childSnapshot.val();
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${data.date}</td>
+            <td>${data.time}</td>
+            <td>${data.description}</td>
+            <td>${data.currency}</td>
+            <td>${data.value}</td>
+            <td><button class="delete-btn" data-id="${childSnapshot.key}">Delete</button></td>
+          `;
+          historyTable.appendChild(row);
+
+          // Add event listeners to delete buttons
+          const deleteButton = row.querySelector('.delete-btn');
+          deleteButton.addEventListener('click', function() {
+            const entryId = deleteButton.getAttribute('data-id');
+            sendDeleteVerificationEmail(entryId, row);  // Send verification email
+          });
+        });
+      });
+    }
+
+    // Function to download budget records as PDF
+    function downloadPDF() {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      // Title of the PDF
+      doc.text("Budget Records", 20, 10);
+
+      // Get budget data from Firebase and add to the PDF
+      const historyRef = ref(database, 'budget/');
+      get(historyRef).then((snapshot) => {
+        let y = 20;
+        snapshot.forEach(childSnapshot => {
+          const data = childSnapshot.val();
+          const record = `${data.date} ${data.time} | ${data.description} | ${data.currency} | ${data.value}`;
+          doc.text(record, 20, y);
+          y += 10;
+        });
+
+        // Save PDF
+        doc.save("budget_records.pdf");
+      });
+    }
+
+    // Form submission
+    document.getElementById('budgetForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+      const description = document.getElementById('description').value;
+      const currency = document.getElementById('currency').value;
+      const value = parseFloat(document.getElementById('value').value);
+
+      const date = new Date().toLocaleDateString();
+      const time = new Date().toLocaleTimeString();
+
+      addBudgetEntry(date, time, description, currency, value);
+      displayBudgetHistory();
+    });
+
+    // Add event listener to download PDF button
+    document.getElementById('downloadPdfBtn').addEventListener('click', function() {
+      downloadPDF();
+    });
+
+    // Logout button functionality
+    document.getElementById('logoutBtn').addEventListener('click', function() {
+      signOut(auth).then(() => {
+        alert("Logged out successfully!");
+        window.location.href = "login.html"; // Redirect to the login page after logging out
+      }).catch((error) => {
+        alert("Error logging out: " + error.message);
+      });
+    });
+
+    // Initialize and display data on page load
+    getBalancesFromDatabase();
+    displayBudgetHistory();
+
+    // Check if the user has verified their email and proceed with deletion
+    onAuthStateChanged(auth, (user) => {
+      if (user && user.emailVerified) {
+        const entryId = sessionStorage.getItem('deleteRecordId');
+        const rowHTML = sessionStorage.getItem('deleteRow');
+        if (entryId && rowHTML) {
+          const row = document.createElement('tr');
+          row.innerHTML = rowHTML;
+          deleteBudgetEntry(entryId, row);  // Delete the record after email verification
+          sessionStorage.removeItem('deleteRecordId');  // Clear the sessionStorage
+          sessionStorage.removeItem('deleteRow');
+        }
+      }
+    });
+
+  </script>
+
+</body>
+</html>
